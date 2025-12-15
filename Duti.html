@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>รายงานเวรประจำวัน</title>
+
+<style>
+body{font-family:sans-serif;margin:0;padding:12px;background:#fafafa}
+h3{text-align:center}
+select,input,textarea,button{
+  width:100%;font-size:16px;padding:10px;margin:6px 0
+}
+textarea{height:220px}
+.box{background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px;margin-bottom:8px}
+button{background:#0066cc;color:#fff;border:none;border-radius:10px;font-weight:600}
+button.gray{background:#666}
+button.red{background:#c00}
+.footer{position:sticky;bottom:0;background:#fafafa;padding:10px 0}
+</style>
+</head>
+
+<body>
+
+<h3>📋 รายงานเวรประจำวัน</h3>
+
+<div id="reportPage">
+
+<input type="date" id="dateInput">
+
+<div id="slots"></div>
+
+<button id="btnGenerate">📝 แสดงข้อความรายงาน</button>
+
+<textarea id="result" placeholder="ข้อความรายงานจะแสดงที่นี่"></textarea>
+
+<div class="footer">
+  <button id="btnCopy">📋 คัดลอก + เปิด LINE</button>
+</div>
+
+<button class="gray" id="btnAdmin">⚙️ ฐานข้อมูล</button>
+</div>
+
+<div id="pinPage" style="display:none">
+<div class="box">
+  <input type="password" id="pinInput" placeholder="รหัส 4 ตัว">
+  <button id="btnPinOk">เข้า</button>
+  <button class="gray" id="btnPinCancel">ยกเลิก</button>
+</div>
+</div>
+
+<div id="dbPage" style="display:none">
+<h3>🗂 ฐานข้อมูลรายชื่อ</h3>
+
+<select id="posSelect"></select>
+
+<input id="rankInput" placeholder="ยศ">
+<input id="nameInput" placeholder="ชื่อ - สกุล">
+<input id="phoneInput" placeholder="โทรศัพท์">
+<input type="hidden" id="editId">
+
+<button id="btnSave">💾 บันทึก</button>
+
+<div id="list"></div>
+
+<button class="gray" id="btnBack">⬅️ กลับ</button>
+</div>
+
+<script>
+/* ===== CONFIG ===== */
+const ADMIN_PIN="2580";
+const positions={
+  1:"นายทหารเวรประจำวัน ปจปร.ฐท.กท.",
+  2:"เสมียนเวรประจำวัน บก.ปจปร.ฐท.กท.",
+  3:"เวรแผนกบริการ ปจปร.ฐท.กท.",
+  4:"เวรแผนกขนส่ง ปจปร.ฐท.กท.",
+  5:"เวรป้อมผีเสื้อสมุทร",
+  6:"เวรรถพยาบาล แผนกขนส่ง ปจปร.ฐท.กท.",
+  7:"พยาบาลเวร รพ.ปจปร.ฐท.กท.",
+  8:"เวรประจำวัน ร้อย.รปภ.ที่ 5 ฯ",
+  9:"กองรักษาการณ์"
+};
+const thaiDays=["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
+const thaiMonths=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+
+/* ===== CACHE ===== */
+const reportPage=document.getElementById("reportPage");
+const dateInput=document.getElementById("dateInput");
+const slotsEl=document.getElementById("slots");
+const resultEl=document.getElementById("result");
+const btnGenerate=document.getElementById("btnGenerate");
+const btnCopy=document.getElementById("btnCopy");
+const btnAdmin=document.getElementById("btnAdmin");
+
+const pinPage=document.getElementById("pinPage");
+const pinInput=document.getElementById("pinInput");
+const btnPinOk=document.getElementById("btnPinOk");
+const btnPinCancel=document.getElementById("btnPinCancel");
+
+const dbPage=document.getElementById("dbPage");
+const posSelect=document.getElementById("posSelect");
+const rankInput=document.getElementById("rankInput");
+const nameInput=document.getElementById("nameInput");
+const phoneInput=document.getElementById("phoneInput");
+const editId=document.getElementById("editId");
+const btnSave=document.getElementById("btnSave");
+const listEl=document.getElementById("list");
+const btnBack=document.getElementById("btnBack");
+
+/* ===== DATABASE ===== */
+let dutyDB=JSON.parse(localStorage.getItem("dutyDB"))||{1:[],2:[],3:[],4:[],5:[],6:[],7:[],8:[],9:[]};
+function saveDB(){localStorage.setItem("dutyDB",JSON.stringify(dutyDB));}
+
+/* ===== BUILD REPORT UI ===== */
+Object.keys(positions).forEach(i=>{
+  const d=document.createElement("div");
+  d.className="box";
+  d.innerHTML=`<b>${i}. ${positions[i]}</b>
+  <select id="sel_${i}"><option value="">-- เลือกชื่อ --</option></select>`;
+  slotsEl.appendChild(d);
+});
+function refreshSelects(){
+  Object.keys(positions).forEach(i=>{
+    const sel=document.getElementById("sel_"+i);
+    sel.innerHTML='<option value="">-- เลือกชื่อ --</option>';
+    dutyDB[i].forEach((p,idx)=>{
+      sel.innerHTML+=`<option value="${idx}">${p.rank}${p.name}</option>`;
+    });
+  });
+}
+refreshSelects();
+
+/* ===== GENERATE REPORT ===== */
+btnGenerate.addEventListener("click",()=>{
+  let body="";
+  Object.keys(positions).forEach(i=>{
+    const sel=document.getElementById("sel_"+i);
+    if(sel.value!==""){
+      const p=dutyDB[i][sel.value];
+      body+=`${i}. ${positions[i]}
+${p.rank}${p.name}
+โทร.${p.phone}
+
+`;
+    }
+  });
+  if(!body){alert("ยังไม่ได้เลือกชื่อเวร");return;}
+
+  const d=dateInput.value?new Date(dateInput.value):new Date();
+  const dayThai=thaiDays[d.getDay()];
+  const dateThai=`${d.getDate()} ${thaiMonths[d.getMonth()]}${(d.getFullYear()+543).toString().slice(-2)}`;
+
+  const t1="รายชื่อผู้ปฏิบัติหน้าที่เวร";
+  const t2=`ประจำวัน${dayThai} ที่ ${dateThai}`;
+  const max=Math.max(t1.length,t2.length);
+  const p1=" ".repeat(Math.floor((max-t1.length)/2));
+  const p2=" ".repeat(Math.floor((max-t2.length)/2));
+
+  resultEl.value=`${p1}${t1}
+${p2}${t2}
+
+${body}`;
+});
+
+/* ===== COPY + LINE ===== */
+btnCopy.addEventListener("click",async()=>{
+  if(!resultEl.value){alert("ยังไม่มีข้อความ");return;}
+  try{await navigator.clipboard.writeText(resultEl.value);}
+  catch{resultEl.select();document.execCommand("copy");}
+  setTimeout(()=>{location.href="line://";},300);
+});
+
+/* ===== ADMIN ===== */
+btnAdmin.onclick=()=>pinPage.style.display="block";
+btnPinCancel.onclick=()=>pinPage.style.display="none";
+btnPinOk.onclick=()=>{
+  if(pinInput.value===ADMIN_PIN){
+    pinPage.style.display="none";
+    reportPage.style.display="none";
+    dbPage.style.display="block";
+    loadDBList();
+  }else alert("รหัสไม่ถูกต้อง");
+};
+
+/* ===== DATABASE UI ===== */
+Object.keys(positions).forEach(i=>{
+  posSelect.innerHTML+=`<option value="${i}">${positions[i]}</option>`;
+});
+function loadDBList(){
+  listEl.innerHTML="";
+  const p=posSelect.value;
+  dutyDB[p].forEach(v=>{
+    const d=document.createElement("div");
+    d.className="box";
+    d.textContent=`${v.rank}${v.name} (${v.phone})`;
+    const e=document.createElement("button");
+    e.textContent="✏️";
+    e.onclick=()=>{
+      editId.value=v.id;
+      rankInput.value=v.rank;
+      nameInput.value=v.name;
+      phoneInput.value=v.phone;
+    };
+    const x=document.createElement("button");
+    x.textContent="🗑";x.className="red";
+    x.onclick=()=>{
+      dutyDB[p]=dutyDB[p].filter(i=>i.id!==v.id);
+      saveDB();loadDBList();refreshSelects();
+    };
+    d.append(e,x);listEl.appendChild(d);
+  });
+}
+btnSave.onclick=()=>{
+  const p=posSelect.value;
+  if(editId.value){
+    Object.assign(dutyDB[p].find(i=>i.id==editId.value),
+      {rank:rankInput.value,name:nameInput.value,phone:phoneInput.value});
+    editId.value="";
+  }else{
+    dutyDB[p].push({id:Date.now(),rank:rankInput.value,name:nameInput.value,phone:phoneInput.value});
+  }
+  rankInput.value=nameInput.value=phoneInput.value="";
+  saveDB();loadDBList();refreshSelects();
+};
+posSelect.onchange=loadDBList;
+btnBack.onclick=()=>{
+  dbPage.style.display="none";
+  reportPage.style.display="block";
+};
+</script>
+
+</body>
+</html>
